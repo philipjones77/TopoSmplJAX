@@ -49,6 +49,23 @@ def test_adaptive_loop_writes_snapshots(tmp_path: Path) -> None:
     assert out.node_count >= pts.shape[0]
 
 
+def test_adaptive_loop_can_record_collapse() -> None:
+    topo, pts = unit_square_tri_mesh(4, 4)
+    out, hist = adaptive_remesh_tri(
+        pts,
+        topo.elements,
+        max_nodes=128,
+        max_elements=256,
+        max_iters=1,
+        target_area=0.054,
+        target_mean_icn=2.0,
+        smoothing_steps=0,
+    )
+    assert len(hist) >= 1
+    assert any(step.did_collapse for step in hist)
+    assert out.node_count == pts.shape[0]
+
+
 def test_export_snapshot_npz_roundtrip(tmp_path: Path) -> None:
     p = jnp.asarray([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=jnp.float32)
     e = jnp.asarray([[0, 1, 2]], dtype=jnp.int32)

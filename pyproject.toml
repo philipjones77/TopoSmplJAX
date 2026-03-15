@@ -18,6 +18,10 @@ dev = [
   "ruff>=0.5",
   "mypy>=1.8",
 ]
+viz = [
+  "matplotlib>=3.8",
+  "pyvista>=0.43",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

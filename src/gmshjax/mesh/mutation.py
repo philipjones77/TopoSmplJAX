@@ -9,6 +9,7 @@ import numpy as np
 
 from gmshjax.runtime import jax_float_dtype
 
+
 class TriMeshBuffer(NamedTuple):
     points: jnp.ndarray  # (max_nodes, 2)
     elements: jnp.ndarray  # (max_elements, 3)
@@ -16,6 +17,13 @@ class TriMeshBuffer(NamedTuple):
     active_elements: jnp.ndarray  # (max_elements,)
     node_count: int
     element_count: int
+
+
+def _trim_tail(mask: jnp.ndarray, count: int) -> int:
+    count_out = count
+    while count_out > 0 and not bool(mask[count_out - 1]):
+        count_out -= 1
+    return count_out
 
 
 def make_tri_mesh_buffer(
@@ -94,9 +102,7 @@ def _orient_tri(p: jnp.ndarray, tri: list[int]) -> list[int]:
     pb = p[b]
     pc = p[c]
     det = (pb[0] - pa[0]) * (pc[1] - pa[1]) - (pb[1] - pa[1]) * (pc[0] - pa[0])
-    if float(det) < 0.0:
-        return [a, c, b]
-    return tri
+    return [a, c, b] if det < 0.0 else tri
 
 
 def flip_diagonal(buffer: TriMeshBuffer, elem_i: int, elem_j: int) -> tuple[TriMeshBuffer, bool]:
@@ -136,6 +142,47 @@ def flip_diagonal(buffer: TriMeshBuffer, elem_i: int, elem_j: int) -> tuple[TriM
             active_elements=buffer.active_elements,
             node_count=buffer.node_count,
             element_count=buffer.element_count,
+        ),
+        True,
+    )
+
+
+def collapse_triangle(buffer: TriMeshBuffer, node_id: int) -> tuple[TriMeshBuffer, bool]:
+    """Collapse a 3-triangle fan around one node back to a single triangle."""
+    if node_id < 0 or node_id >= buffer.node_count or not bool(buffer.active_nodes[node_id]):
+        return buffer, False
+
+    slots: list[int] = []
+    boundary: list[int] = []
+    for slot in range(int(buffer.element_count)):
+        if not bool(buffer.active_elements[slot]):
+            continue
+        tri = [int(v) for v in np.asarray(buffer.elements[slot]).tolist()]
+        if node_id in tri:
+            slots.append(slot)
+            boundary.extend(v for v in tri if v != node_id)
+
+    unique = sorted(set(boundary))
+    if len(slots) != 3 or len(unique) != 3:
+        return buffer, False
+
+    keep = min(slots)
+    tri = _orient_tri(buffer.points, unique)
+    elems = buffer.elements.at[keep].set(jnp.asarray(tri, dtype=buffer.elements.dtype))
+    emask = buffer.active_elements
+    for slot in slots:
+        if slot != keep:
+            emask = emask.at[slot].set(False)
+    nmask = buffer.active_nodes.at[node_id].set(False)
+
+    return (
+        TriMeshBuffer(
+            points=buffer.points,
+            elements=elems,
+            active_nodes=nmask,
+            active_elements=emask,
+            node_count=_trim_tail(nmask, buffer.node_count),
+            element_count=_trim_tail(emask, buffer.element_count),
         ),
         True,
     )

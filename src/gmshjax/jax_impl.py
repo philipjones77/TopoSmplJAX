@@ -19,14 +19,19 @@ from gmshjax.mesh.operators import (
     triangle_signed_areas,
 )
 from gmshjax.mesh.topology import unit_cube_tet_mesh, unit_square_quad_mesh, unit_square_tri_mesh
+from gmshjax.runtime import jax_float_dtype
 
 
-def as_jax_array(x, dtype=jnp.float32):
+def as_jax_array(x, dtype=None):
     """Convert inputs to JAX arrays with project-consistent dtype."""
+    if dtype is None:
+        dtype = jax_float_dtype()
     return jnp.asarray(x, dtype=dtype)
 
 
-def default_deformation_params(dtype=jnp.float32) -> DeformationParams:
+def default_deformation_params(dtype=None) -> DeformationParams:
+    if dtype is None:
+        dtype = jax_float_dtype()
     return DeformationParams(
         translation=jnp.array([0.0, 0.0], dtype=dtype),
         scale=jnp.array([1.0, 1.0], dtype=dtype),

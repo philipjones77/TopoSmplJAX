@@ -7,8 +7,9 @@ from typing import TypedDict
 import jax.numpy as jnp
 
 from gmshjax.mesh.adaptive_quad import quad_area_magnitudes
-from gmshjax.mesh.operators import quad_icn, quad_ige, tet_icn, tet_ige, triangle_icn, triangle_ige
+from gmshjax.mesh.operators import line_element_lengths, line_mesh_quality_energy, quad_icn, quad_ige, tet_icn, tet_ige, triangle_icn, triangle_ige
 from gmshjax.mesh.refine import triangle_area_magnitudes
+from gmshjax.mesh.topology import mesh_topology_from_points_and_elements
 
 
 class MeshStats(TypedDict):
@@ -19,6 +20,20 @@ class MeshStats(TypedDict):
     mean_ige: float
     min_ige: float
     max_area_or_volume_proxy: float
+
+
+def line_diagnostics(points: jnp.ndarray, elements: jnp.ndarray) -> dict[str, float | int]:
+    lengths = line_element_lengths(points, elements)
+    topo = mesh_topology_from_points_and_elements(points, elements)
+    topo_energy = line_mesh_quality_energy(points, topo)
+    return {
+        "n_nodes": int(points.shape[0]),
+        "n_elements": int(elements.shape[0]),
+        "mean_edge_length": float(jnp.mean(lengths)),
+        "min_edge_length": float(jnp.min(lengths)),
+        "max_edge_length": float(jnp.max(lengths)),
+        "line_energy": float(topo_energy),
+    }
 
 
 def tri_diagnostics(points: jnp.ndarray, elements: jnp.ndarray) -> MeshStats:

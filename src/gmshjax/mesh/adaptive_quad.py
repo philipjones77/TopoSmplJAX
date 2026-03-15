@@ -12,6 +12,7 @@ from gmshjax.mesh.mutation_qt import (
     QuadMeshBuffer,
     active_quad_elements,
     active_quad_points,
+    collapse_quad,
     make_quad_mesh_buffer,
     split_quad,
 )
@@ -27,6 +28,7 @@ class QuadAdaptiveHistory(NamedTuple):
     min_icn: float
     max_area: float
     did_split: bool
+    did_collapse: bool
 
 
 def quad_area_magnitudes(points: jnp.ndarray, elements: jnp.ndarray) -> jnp.ndarray:
@@ -59,6 +61,26 @@ def _neighbor_accum(points: jnp.ndarray, edges: jnp.ndarray) -> tuple[jnp.ndarra
     return neighbor_sum, deg
 
 
+def _collapse_candidate_node(buf: QuadMeshBuffer, target_area: float, min_nodes: int) -> int | None:
+    if buf.node_count <= min_nodes:
+        return None
+
+    elems = active_quad_elements(buf)
+    pts = active_quad_points(buf)
+    collapse_limit = 0.35 * target_area
+    for node_id in range(buf.node_count - 1, min_nodes - 1, -1):
+        incident = elems == node_id
+        incident_mask = jnp.any(incident, axis=1)
+        incident_count = int(jnp.sum(incident_mask))
+        if incident_count != 4:
+            continue
+        local_quads = elems[incident_mask]
+        local_areas = quad_area_magnitudes(pts, local_quads)
+        if float(jnp.max(local_areas)) <= collapse_limit:
+            return node_id
+    return None
+
+
 def adaptive_remesh_quad(
     points: jnp.ndarray,
     elements: jnp.ndarray,
@@ -74,6 +96,7 @@ def adaptive_remesh_quad(
     snapshot_dir: str | Path | None = None,
 ) -> tuple[QuadMeshBuffer, list[QuadAdaptiveHistory]]:
     buf = make_quad_mesh_buffer(points, elements, max_nodes=max_nodes, max_elements=max_elements)
+    min_nodes = int(buf.node_count)
     hist: list[QuadAdaptiveHistory] = []
     snap_root = Path(snapshot_dir) if snapshot_dir is not None else None
 
@@ -101,14 +124,19 @@ def adaptive_remesh_quad(
             )
 
         if mean_icn >= target_mean_icn and max_area <= target_area:
-            hist.append(QuadAdaptiveHistory(it, buf.node_count, buf.element_count, mean_icn, min_icn, max_area, False))
+            hist.append(QuadAdaptiveHistory(it, buf.node_count, buf.element_count, mean_icn, min_icn, max_area, False, False))
             break
 
         priority = quad_refinement_priority(pts, elems, target_area=target_area)
         split_idx = int(jnp.argmax(priority))
-        did_split = bool(float(priority[split_idx]) > 0.0)
+        did_split = priority[split_idx] > 0.0
         if did_split:
             buf, did_split = split_quad(buf, split_idx)
+
+        did_collapse = False
+        collapse_node = _collapse_candidate_node(buf, target_area=target_area, min_nodes=min_nodes)
+        if collapse_node is not None:
+            buf, did_collapse = collapse_quad(buf, collapse_node)
 
         # Smoothing on active nodes.
         for _ in range(smoothing_steps):
@@ -129,6 +157,6 @@ def adaptive_remesh_quad(
                 element_count=buf.element_count,
             )
 
-        hist.append(QuadAdaptiveHistory(it, buf.node_count, buf.element_count, mean_icn, min_icn, max_area, did_split))
+        hist.append(QuadAdaptiveHistory(it, buf.node_count, buf.element_count, mean_icn, min_icn, max_area, did_split, did_collapse))
 
     return buf, hist

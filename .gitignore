@@ -10,3 +10,9 @@ build/
 .ipynb_checkpoints/
 results/*.json
 results/*.csv
+results/**/*.json
+results/**/*.csv
+results/**/*.npz
+results/**/*.msh
+
+.vscode/

@@ -33,7 +33,24 @@ def test_adaptive_quad_loop_writes_snapshots(tmp_path: Path) -> None:
     )
     assert len(hist) >= 1
     assert out.node_count >= pts.shape[0]
-    assert len(list(tmp_path.glob("iter_*.npz"))) >= 1
+    assert next(tmp_path.glob("iter_*.npz"), None) is not None
+
+
+def test_adaptive_quad_loop_can_record_collapse() -> None:
+    topo, pts = unit_square_quad_mesh(4, 4)
+    out, hist = adaptive_remesh_quad(
+        pts,
+        topo.elements,
+        max_nodes=256,
+        max_elements=256,
+        max_iters=1,
+        target_area=0.09,
+        target_mean_icn=2.0,
+        smoothing_steps=0,
+    )
+    assert len(hist) >= 1
+    assert any(step.did_collapse for step in hist)
+    assert out.node_count == pts.shape[0]
 
 
 def test_cube_to_sphere_projection_radius() -> None:

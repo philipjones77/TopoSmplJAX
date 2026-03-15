@@ -1,5 +1,9 @@
 # AD Mesh Creation for JAX
 
+This document is a legacy root-level overview retained during the documentation-governance migration.
+
+For governed entry documents, see `project_overview.md`, `architecture.md`, and `documentation_governance.md`.
+
 ## Scope
 
 - Differentiable mesh construction primitives.

@@ -9,7 +9,15 @@ import jax.numpy as jnp
 import numpy as np
 
 from gmshjax.io.exports import export_snapshot_npz
-from gmshjax.mesh.mutation import TriMeshBuffer, active_elements, active_points, flip_diagonal, make_tri_mesh_buffer, split_triangle
+from gmshjax.mesh.mutation import (
+    TriMeshBuffer,
+    active_elements,
+    active_points,
+    collapse_triangle,
+    flip_diagonal,
+    make_tri_mesh_buffer,
+    split_triangle,
+)
 from gmshjax.mesh.operators import triangle_icn
 from gmshjax.mesh.refine import triangle_area_magnitudes, triangle_refinement_priority
 from gmshjax.mesh.topology import triangle_edges
@@ -24,6 +32,7 @@ class AdaptiveHistory(NamedTuple):
     max_area: float
     did_split: bool
     did_flip: bool
+    did_collapse: bool
 
 
 def _neighbor_accum(points: jnp.ndarray, edges: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
@@ -77,6 +86,29 @@ def _find_first_shared_edge_pair(elements: np.ndarray) -> tuple[int, int] | None
     return None
 
 
+def _collapse_candidate_node(buffer: TriMeshBuffer, target_area: float, min_nodes: int) -> int | None:
+    if buffer.node_count <= min_nodes:
+        return None
+
+    points = np.asarray(active_points(buffer))
+    elements = np.asarray(active_elements(buffer))
+    collapse_limit = 0.35 * target_area
+
+    for node_id in range(buffer.node_count - 1, min_nodes - 1, -1):
+        incident_areas: list[float] = []
+        incident_count = 0
+        for tri in elements.tolist():
+            if node_id not in tri:
+                continue
+            incident_count += 1
+            pa, pb, pc = points[np.asarray(tri, dtype=np.int32)]
+            area = 0.5 * abs((pb[0] - pa[0]) * (pc[1] - pa[1]) - (pb[1] - pa[1]) * (pc[0] - pa[0]))
+            incident_areas.append(float(area))
+        if incident_count == 3 and incident_areas and max(incident_areas) <= collapse_limit:
+            return node_id
+    return None
+
+
 def adaptive_remesh_tri(
     points: jnp.ndarray,
     elements: jnp.ndarray,
@@ -93,6 +125,7 @@ def adaptive_remesh_tri(
 ) -> tuple[TriMeshBuffer, list[AdaptiveHistory]]:
     """Run adaptive split/flip/smooth loop with fixed-capacity buffers."""
     buffer = make_tri_mesh_buffer(points, elements, max_nodes=max_nodes, max_elements=max_elements)
+    min_nodes = int(buffer.node_count)
     history: list[AdaptiveHistory] = []
     snap_root = Path(snapshot_dir) if snapshot_dir is not None else None
 
@@ -122,13 +155,13 @@ def adaptive_remesh_tri(
 
         if mean_icn >= target_mean_icn and max_area <= target_area:
             history.append(
-                AdaptiveHistory(it, buffer.node_count, buffer.element_count, mean_icn, min_icn, max_area, False, False)
+                AdaptiveHistory(it, buffer.node_count, buffer.element_count, mean_icn, min_icn, max_area, False, False, False)
             )
             break
 
         priority = triangle_refinement_priority(pts, elems, target_area=target_area)
         split_idx = int(jnp.argmax(priority))
-        did_split = bool(float(priority[split_idx]) > 0.0)
+        did_split = priority[split_idx] > 0.0
         if did_split:
             buffer, did_split = split_triangle(buffer, split_idx)
 
@@ -137,9 +170,24 @@ def adaptive_remesh_tri(
         if pair is not None:
             buffer, did_flip = flip_diagonal(buffer, pair[0], pair[1])
 
+        did_collapse = False
+        collapse_node = _collapse_candidate_node(buffer, target_area=target_area, min_nodes=min_nodes)
+        if collapse_node is not None:
+            buffer, did_collapse = collapse_triangle(buffer, collapse_node)
+
         buffer = _smooth_active_points(buffer, alpha=smoothing_alpha, steps=smoothing_steps, movable_mask=movable_mask)
         history.append(
-            AdaptiveHistory(it, buffer.node_count, buffer.element_count, mean_icn, min_icn, max_area, did_split, did_flip)
+            AdaptiveHistory(
+                it,
+                buffer.node_count,
+                buffer.element_count,
+                mean_icn,
+                min_icn,
+                max_area,
+                did_split,
+                did_flip,
+                did_collapse,
+            )
         )
 
     return buffer, history

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from gmshjax.io.exports import export_metrics_json, load_snapshot_npz
+from gmshjax.io.exports import export_gmsh_msh, export_metrics_json, load_snapshot_npz
 from gmshjax.mesh.adaptive_quad import adaptive_remesh_quad
 from gmshjax.mesh.diagnostics import quad_diagnostics
 from gmshjax.mesh.topology import unit_square_quad_mesh
@@ -25,10 +25,16 @@ def main() -> None:
     )
     stats = quad_diagnostics(buf.points[: buf.node_count], buf.elements[: buf.element_count])
     export_metrics_json(out_dir / "final_metrics.json", stats)
+    export_gmsh_msh(
+        out_dir / "final_mesh.msh",
+        buf.points[: buf.node_count],
+        buf.elements[: buf.element_count],
+    )
     first = load_snapshot_npz(out_dir / "iter_0000.npz")
     print("history_len:", len(hist))
     print("first_snapshot_points:", first["points"].shape)
     print("final_mean_icn:", stats["mean_icn"])
+    print("exported_msh:", (out_dir / "final_mesh.msh").exists())
 
 
 if __name__ == "__main__":

@@ -12,6 +12,11 @@ _C_TRI = 2.0 / jnp.sqrt(3.0)
 _C_TET = jnp.sqrt(2.0)
 
 
+def line_element_lengths(points: jnp.ndarray, elements: jnp.ndarray) -> jnp.ndarray:
+    seg = points[elements]
+    return jnp.linalg.norm(seg[:, 1, :] - seg[:, 0, :], axis=1)
+
+
 def _triangle_jacobian_terms(points: jnp.ndarray, elements: jnp.ndarray):
     tri = points[elements]  # (n_elem, 3, 2)
     a = tri[:, 0, :]
@@ -167,3 +172,71 @@ def mesh_quality_energy(points: jnp.ndarray, topology: MeshTopology) -> jnp.ndar
     fold_penalty = jnp.mean(jax.nn.softplus(-areas * 100.0))
     quality_barrier = jnp.mean(jax.nn.softplus((0.2 - icn) * 20.0) + jax.nn.softplus((0.2 - ige) * 20.0))
     return area_term + edge_term + 1.0e-3 * fold_penalty + 1.0e-3 * quality_barrier
+
+
+def quad_mesh_quality_energy(points: jnp.ndarray, topology: MeshTopology) -> jnp.ndarray:
+    """Smooth quality energy for fixed-topology quad meshes."""
+    q = points[topology.elements]
+    a = q[:, 0, :]
+    b = q[:, 1, :]
+    c = q[:, 2, :]
+    d = q[:, 3, :]
+    area1 = 0.5 * ((b[:, 0] - a[:, 0]) * (c[:, 1] - a[:, 1]) - (b[:, 1] - a[:, 1]) * (c[:, 0] - a[:, 0]))
+    area2 = 0.5 * ((c[:, 0] - a[:, 0]) * (d[:, 1] - a[:, 1]) - (c[:, 1] - a[:, 1]) * (d[:, 0] - a[:, 0]))
+    areas = area1 + area2
+    lens = edge_lengths(points, topology.edges)
+    icn = quad_icn(points, topology.elements)
+    ige = quad_ige(points, topology.elements)
+
+    area_term = jnp.var(jnp.abs(areas))
+    edge_term = jnp.var(lens)
+    fold_penalty = jnp.mean(jax.nn.softplus(-areas * 100.0))
+    quality_barrier = jnp.mean(jax.nn.softplus((0.2 - icn) * 20.0) + jax.nn.softplus((0.2 - ige) * 20.0))
+    return area_term + edge_term + 1.0e-3 * fold_penalty + 1.0e-3 * quality_barrier
+
+
+def tet_mesh_quality_energy(points: jnp.ndarray, topology: MeshTopology) -> jnp.ndarray:
+    """Smooth quality energy for fixed-topology tetrahedral meshes."""
+    t = points[topology.elements]
+    a = t[:, 0, :]
+    b = t[:, 1, :]
+    c = t[:, 2, :]
+    d = t[:, 3, :]
+    e1 = b - a
+    e2 = c - a
+    e3 = d - a
+    det = (
+        e1[:, 0] * (e2[:, 1] * e3[:, 2] - e2[:, 2] * e3[:, 1])
+        - e1[:, 1] * (e2[:, 0] * e3[:, 2] - e2[:, 2] * e3[:, 0])
+        + e1[:, 2] * (e2[:, 0] * e3[:, 1] - e2[:, 1] * e3[:, 0])
+    )
+    volumes = det / 6.0
+    lens = edge_lengths(points, topology.edges)
+    icn = tet_icn(points, topology.elements)
+    ige = tet_ige(points, topology.elements)
+
+    volume_term = jnp.var(jnp.abs(volumes))
+    edge_term = jnp.var(lens)
+    fold_penalty = jnp.mean(jax.nn.softplus(-volumes * 100.0))
+    quality_barrier = jnp.mean(jax.nn.softplus((0.1 - icn) * 20.0) + jax.nn.softplus((0.1 - ige) * 20.0))
+    return volume_term + edge_term + 1.0e-3 * fold_penalty + 1.0e-3 * quality_barrier
+
+
+def line_mesh_quality_energy(points: jnp.ndarray, topology: MeshTopology) -> jnp.ndarray:
+    """Smooth quality energy for fixed-topology line meshes."""
+    lengths = line_element_lengths(points, topology.elements)
+    src = topology.edges[:, 0]
+    dst = topology.edges[:, 1]
+    neighbor_sum = jnp.zeros_like(points)
+    neighbor_sum = neighbor_sum.at[src].add(points[dst])
+    neighbor_sum = neighbor_sum.at[dst].add(points[src])
+    deg = jnp.zeros((points.shape[0],), dtype=points.dtype)
+    one = jnp.ones((topology.edges.shape[0],), dtype=points.dtype)
+    deg = deg.at[src].add(one)
+    deg = deg.at[dst].add(one)
+    mean_nbr = neighbor_sum / jnp.maximum(deg[:, None], 1.0)
+    lap = mean_nbr - points
+    length_term = jnp.var(lengths)
+    smooth_term = jnp.mean(jnp.sum(lap * lap, axis=1))
+    collapse_penalty = jnp.mean(jax.nn.softplus((0.05 - lengths) * 40.0))
+    return length_term + 0.1 * smooth_term + 1.0e-3 * collapse_penalty
