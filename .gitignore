@@ -8,11 +8,13 @@ dist/
 build/
 *.egg-info/
 .ipynb_checkpoints/
+tests/output/
 results/*.json
 results/*.csv
 results/**/*.json
 results/**/*.csv
 results/**/*.npz
 results/**/*.msh
+_bundles/*.zip
 
 .vscode/

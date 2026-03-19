@@ -1,0 +1,3 @@
+# Contributing
+
+...moved from CONTRIBUTING.md...

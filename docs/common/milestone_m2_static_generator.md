@@ -1,0 +1,3 @@
+# Milestone M2: Static Generator
+
+...moved from docs/milestone_m2_static_generator.md...

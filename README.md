@@ -1,41 +1,30 @@
-# GmshJAX
+# TopoSmplJAX
 
-AD Mesh Creation for JAX.
+`TopoSmplJAX` is a combined repository for two JAX backends:
 
-Gmsh-inspired architecture in JAX:
+- `topojax`: differentiable mesh generation, mesh movement, and mesh operators
+- `smpljax`: fixed-topology SMPL-family body-model meshes and runtime export
 
-- `MVertex`/`MElement` style immutable ids are represented as static arrays in topology.
-- `GEntity` ownership is preserved through element-to-entity tags.
-- Topology is static, while node coordinates are dynamic and differentiable.
+The merge keeps the backend implementations separate while exposing shared mode and mesh-export concepts through the new `toposmpljax` namespace.
 
 ## Layout
 
-- `src/gmshjax/`: differentiable mesh creation runtime.
-- `src/gmshjax/numpy_impl.py`: NumPy forward implementation.
-- `src/gmshjax/jax_impl.py`: JAX-native implementation and helpers.
-- `src/gmshjax/mesh/boundary.py`: boundary parameterization and constrained placement.
-- `src/gmshjax/mesh/refine.py`: batched local refinement candidate kernels.
-- `src/gmshjax/mesh/connectivity_opt.py`: vectorized edge-flip/smoothing candidate evaluators.
-- `src/gmshjax/mesh/mutation.py`: fixed-capacity split/flip connectivity mutation.
-- `src/gmshjax/mesh/adaptive.py`: adaptive remeshing loop with stopping criteria.
-- `src/gmshjax/mesh/mutation_qt.py`: fixed-capacity quad/tet mutation buffers.
-- `src/gmshjax/mesh/adaptive_quad.py`: adaptive remeshing loop for 2D quads.
-- `tests/`: unit and integration tests.
-- `tools/`: utility scripts for local workflows.
-- `docs/`: governed documentation tree with architecture, implementation, theory, and status material.
-- `contracts/`: binding public API and runtime guarantees.
-- `examples/`, `notebooks/`: usage and experiments.
-- `results/`: generated experiment outputs.
+- `src/topojax/`: existing TopoJAX backend
+- `src/smpljax/`: imported smplJAX backend
+- `src/toposmpljax/`: shared combined namespace and backend registry
+- `tests/topo/`: TopoJAX and shared tests
+- `tests/smpl/`: imported smplJAX tests
+- `docs/common/`: shared repository docs
+- `docs/topo/`: TopoJAX docs
+- `docs/smpl/`: imported smplJAX docs
+- `contracts/topo/`: TopoJAX contracts
+- `contracts/smpl/`: imported smplJAX contracts
+- `private_data/smpl/`: imported smplJAX model-data skeleton
+- `examples/topo/`: TopoJAX examples
+- `examples/smpl/`: imported smplJAX examples
+- `tools/common/`, `tools/topo/`, `tools/smpl/`: shared and backend-owned tooling
 
-Documentation entry points:
-
-- `docs/project_overview.md`
-- `docs/architecture.md`
-- `docs/documentation_governance.md`
-- `docs/status/mode1_2d_3d_status.md`
-- `contracts/api_contract.md`
-
-## Install (editable)
+## Install
 
 ```powershell
 python -m pip install -e .[dev]
@@ -47,23 +36,62 @@ Visualization extras:
 python -m pip install -e .[dev,viz]
 ```
 
-## Tests
+## Combined API
 
-```powershell
-python -m pytest tests -q
+Backend registry:
+
+```python
+from toposmpljax import get_backends, build_mode_bridge
+
+print(get_backends())
 ```
 
-## Notes
+Topo backend mode bridge:
 
-- This repository is focused on AD-friendly mesh construction and optimization in JAX.
-- Geometry and meshing APIs are designed to work with `jit`, `vmap`, and `grad`.
-- Fixed connectivity and stable shapes let JAX compile once and reuse as the manifold deforms.
-- Mode 1 fixed-topology workflows now have dedicated optimization, diagnostics/IO export, benchmarking, and visualization helpers.
-- Mode 1 now supports first-class line meshes, arbitrary 2D polygon-domain triangles and quads, exact box-volume tetrahedral initialization, 3D implicit-volume tetrahedral initialization, 3D polygon extrusion to tetrahedra, supported `.msh` import, and a single high-level create-optimize-export-view workflow.
-- Tagged domain metadata is exported through Gmsh line and triangle boundary blocks, with Gmsh used only as a viewer.
-- The repo virtual environment can be prepared for Mode 1 visualization tests with `matplotlib` and `pyvista` installed as optional dependencies.
-- NumPy and JAX layers share the same mesh logic so forward computations match closely.
-- Static generators currently available: structured 2D triangle/quad and 3D tetrahedral meshes.
-- M3 candidate kernels are available for boundary-constrained meshing and adaptive refinement scoring.
-- M3 complete path is available: split/flip mutation + adaptive loop + snapshot export.
-- 2D quad adaptive loop is included; 3D sphere setups are supported via cube-to-sphere projection.
+```python
+from topojax import initialize_mode1_domain
+from toposmpljax import build_mode_bridge
+
+domain = initialize_mode1_domain("line", n=8)
+bridge = build_mode_bridge("topo", domain, "fixed-topology-ad")
+payload = bridge.to_randomfields77_mesh_payload()
+```
+
+SMPL backend mode bridge:
+
+```python
+from smpljax import create
+from toposmpljax import build_mode_bridge
+
+model = create("private_data/smpl/models/validated/smplx/MODEL_NAME.npz")
+bridge = build_mode_bridge("smpl", model, "fixed-topology-ad")
+payload = bridge.to_randomfields77_mesh_payload()
+```
+
+## Compatibility
+
+- Existing `topojax` imports remain valid.
+- Existing `smpljax` imports remain valid.
+- New shared entry points live under `toposmpljax`.
+
+## Licensing
+
+- Repository-authored code, docs, tests, examples, tools, and contracts are MIT-licensed under `LICENSE`.
+- Path-specific coverage is documented in `LICENSES/CODE_AND_CONTENT.md`.
+- `private_data/smpl/` is a boundary folder: repository-authored metadata is MIT when present, but upstream SMPL-family model assets remain under their original terms and are not relicensed by this repository.
+
+## Tests
+
+Core combined and Topo slice:
+
+```powershell
+$env:PYTHONPATH='src'
+python -m pytest -q tests/topo/test_rf77_bridge.py tests/topo/test_ad_modes.py tests/topo/test_mode1_workflow.py tests/topo/test_mode2_workflow.py
+```
+
+Imported smplJAX slice:
+
+```powershell
+$env:PYTHONPATH='src'
+python -m pytest -q tests/smpl/test_import.py tests/smpl/test_api_factory.py
+```

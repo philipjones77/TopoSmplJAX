@@ -1,0 +1,11 @@
+# Common Layer License Notice
+
+Files under `common/` are repository-authored support material for the combined workspace.
+
+Unless a more specific notice is added to a descendant path, material in this folder is licensed under the repository root MIT license:
+
+- [../LICENSE](/home/phili/projects/TopoSmplJAX/LICENSE)
+
+Repository-wide path mapping lives in:
+
+- [../LICENSES/CODE_AND_CONTENT.md](/home/phili/projects/TopoSmplJAX/LICENSES/CODE_AND_CONTENT.md)
